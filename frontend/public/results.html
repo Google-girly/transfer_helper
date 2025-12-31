@@ -2,29 +2,15 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Transfer Results</title>
+    <title>Results</title>
   </head>
   <body>
-    <h1>Transfer Results</h1>
+    <h1>Results</h1>
 
     <p id="summary"></p>
 
-    <hr />
-
-    <h2>Classes you’ve taken (lookup)</h2>
-    <p style="margin-top: 0;">
-      Type a course code or course title from the <em>equivalents</em> list (example: <strong>HORT 53</strong> or <strong>Soil Science and Management</strong>)
-    </p>
-
-    <input id="takenInput" type="text" placeholder="e.g. HORT 53" style="width: 320px;" />
-    <button id="takenBtn">Find match</button>
-    <p id="takenMsg" style="color:red;"></p>
-
-    <div id="takenResults"></div>
-
-    <hr />
-
-    <div id="results"></div>
+    <h2>Matches for classes you’ve taken</h2>
+    <div id="takenBlock"></div>
 
     <p><a href="/">← Back</a></p>
 
@@ -38,149 +24,91 @@
           .replaceAll("'", "&#039;");
       }
 
-      async function loadResults() {
+      async function main() {
         const params = new URLSearchParams(window.location.search);
         const from = params.get("from");
         const to = params.get("to");
 
         const summary = document.getElementById("summary");
-        const results = document.getElementById("results");
-
-        const takenInput = document.getElementById("takenInput");
-        const takenBtn = document.getElementById("takenBtn");
-        const takenMsg = document.getElementById("takenMsg");
-        const takenResults = document.getElementById("takenResults");
-
-        function setTakenMsg(msg) {
-          takenMsg.textContent = msg || "";
-        }
+        const takenBlock = document.getElementById("takenBlock");
 
         if (!from || !to) {
           summary.textContent = "Missing school selection.";
-          takenBtn.disabled = true;
           return;
         }
 
-        summary.textContent = "Loading transfers...";
-
-        // Load main transfer list
+        // Pull taken classes from localStorage
+        let taken = [];
         try {
-          const res = await fetch("http://localhost:8000/transfers", {
+          taken = JSON.parse(localStorage.getItem("takenClasses") || "[]");
+          if (!Array.isArray(taken)) taken = [];
+        } catch {
+          taken = [];
+        }
+
+        if (!taken.length) {
+          summary.innerHTML = `No classes were entered on the home page.`;
+          takenBlock.innerHTML = `<p>Add classes on the home page and submit again.</p>`;
+          return;
+        }
+
+        summary.textContent = "Finding matches...";
+
+        try {
+          const res = await fetch("http://localhost:8000/lookup_batch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ from, to })
+            body: JSON.stringify({ from, to, queries: taken })
           });
 
           const data = await res.json();
 
           if (!res.ok) {
-            summary.textContent = data.error || "Failed to load transfers.";
+            summary.innerHTML = `<span style="color:red;">${esc(data.error || "Lookup failed.")}</span>`;
             return;
           }
 
           summary.innerHTML = `
             <strong>From:</strong> ${esc(data.from_college)} (code ${esc(data.from_code)})<br/>
             <strong>To:</strong> ${esc(data.to_college)} (code ${esc(data.to_code)})<br/>
-            <strong>Year:</strong> ${esc(data.academic_year || "N/A")}<br/>
-            <strong>Transfers:</strong> ${esc(data.transfers.length)}
+            <strong>Year:</strong> ${esc(data.academic_year || "N/A")}
           `;
 
-          if (!data.transfers.length) {
-            results.innerHTML = "<p>No transfers found.</p>";
-          } else {
-            const html = data.transfers.map(t => {
-              const eqs = (t.equivalents || []).length
-                ? `<ul>${t.equivalents.map(e =>
-                    `<li>${esc(e.course)}${e.title ? ` — ${esc(e.title)}` : ""}</li>`
-                  ).join("")}</ul>`
-                : "<p>No equivalent course</p>";
-
+          const blocks = (data.results || []).map(r => {
+            if (!r.matches_count) {
               return `
-                <div style="margin-bottom:16px;">
-                  <strong>${esc(t.from_course)}</strong>
-                  ${t.course_title ? ` — ${esc(t.course_title)}` : ""}
-                  <div style="font-size:0.9em;">
-                    ${t.department ? esc(t.department) : ""}${t.units !== undefined ? ` • Units: ${esc(t.units)}` : ""}
-                  </div>
-                  ${eqs}
+                <div style="margin-bottom:14px;">
+                  <div><strong>Input:</strong> ${esc(r.query)}</div>
+                  <div style="color:#555;">No match found.</div>
                 </div>
               `;
-            }).join("");
-
-            results.innerHTML = html;
-          }
-
-        } catch (err) {
-          summary.textContent = "Error loading results.";
-          return;
-        }
-
-        // Lookup handler (searches equivalents and returns from_course + course_title)
-        async function runLookup() {
-          setTakenMsg("");
-          takenResults.innerHTML = "";
-
-          const q = takenInput.value.trim();
-          if (!q) {
-            setTakenMsg("Type a course code or title first.");
-            return;
-          }
-
-          takenBtn.disabled = true;
-          takenBtn.textContent = "Searching...";
-
-          try {
-            const res = await fetch("http://localhost:8000/lookup", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ from, to, query: q })
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-              setTakenMsg(data.error || "Lookup failed.");
-              return;
             }
 
-            if (!data.matches_count) {
-              takenResults.innerHTML = `<p>No match found for <strong>${esc(q)}</strong>.</p>`;
-              return;
-            }
+            const list = r.matches.map(m => `
+              <li style="margin-bottom: 8px;">
+                <div><strong>${esc(m.from_course)}</strong> — ${esc(m.course_title)}</div>
+                <div style="font-size:0.9em;color:#555;">
+                  Matched: ${esc(m.matched_equivalent.course)}${m.matched_equivalent.title ? ` — ${esc(m.matched_equivalent.title)}` : ""}
+                </div>
+              </li>
+            `).join("");
 
-            // Plain + easy to read:
-            // "You entered: X" then list "FROM_COURSE — COURSE_TITLE (matched: EQUIV ...)"
-            const list = data.matches.map(m => {
-              const matchEq = m.matched_equivalent || {};
-              return `
-                <li style="margin-bottom: 10px;">
-                  <div><strong>${esc(m.from_course)}</strong> — ${esc(m.course_title)}</div>
-                  <div style="font-size: 0.9em;">
-                    Matched: ${esc(matchEq.course)}${matchEq.title ? ` — ${esc(matchEq.title)}` : ""}
-                  </div>
-                </li>
-              `;
-            }).join("");
-
-            takenResults.innerHTML = `
-              <p>Matches for <strong>${esc(q)}</strong>:</p>
-              <ol>${list}</ol>
+            return `
+              <div style="margin-bottom:14px;">
+                <div><strong>Input:</strong> ${esc(r.query)}</div>
+                <ol>${list}</ol>
+              </div>
             `;
-          } catch (err) {
-            setTakenMsg("Lookup failed (check backend / console).");
-          } finally {
-            takenBtn.disabled = false;
-            takenBtn.textContent = "Find match";
-          }
-        }
+          }).join("");
 
-        takenBtn.addEventListener("click", runLookup);
-        takenInput.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") runLookup();
-        });
+          takenBlock.innerHTML = blocks || "<p>No results.</p>";
+        } catch (err) {
+          console.error(err);
+          summary.textContent = "Lookup failed (check backend / console).";
+        }
       }
 
-      window.addEventListener("DOMContentLoaded", loadResults);
+      window.addEventListener("DOMContentLoaded", main);
     </script>
   </body>
 </html>

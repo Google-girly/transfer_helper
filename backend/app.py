@@ -49,9 +49,9 @@ def fetch_assist_transfers(from_code: str, to_code: str):
 
             course_info = course.get("course", {}) or {}
             from_course = f"{(course_info.get('prefix') or '').strip()} {str(course_info.get('courseNumber') or '').strip()}".strip()
-            course_title = course_info.get("courseTitle", "")
+            course_title = (course_info.get("courseTitle") or "").strip()
             units = course_info.get("minUnits", "N/A")
-            department = course_info.get("department", "")
+            department = (course_info.get("department") or "").strip()
 
             equivalents = []
             sending_art = (course.get("sendingArticulation") or {})
@@ -61,7 +61,8 @@ def fetch_assist_transfers(from_code: str, to_code: str):
                     eq_num = str(to_course.get("courseNumber") or "").strip()
                     eq_title = (to_course.get("courseTitle") or "").strip()
                     label = f"{eq_prefix} {eq_num}".strip()
-                    equivalents.append({"course": label, "title": eq_title})
+                    if label or eq_title:
+                        equivalents.append({"course": label, "title": eq_title})
 
             transfers.append({
                 "from_course": from_course,
@@ -84,10 +85,34 @@ def fetch_assist_transfers(from_code: str, to_code: str):
     return payload
 
 def normalize(s: str) -> str:
-    # Lowercase, trim, collapse whitespace. Also remove punctuation that commonly varies.
     s = (s or "").strip().lower()
     s = re.sub(r"\s+", " ", s)
     return s
+
+def find_matches_in_payload(payload: dict, query: str):
+    q = normalize(query)
+    matches = []
+    if not q:
+        return matches
+
+    for t in payload.get("transfers", []):
+        for eq in (t.get("equivalents") or []):
+            eq_course = normalize(eq.get("course"))
+            eq_title = normalize(eq.get("title"))
+
+            # Exact match (case-insensitive) on either code or title
+            if q == eq_course or q == eq_title:
+                matches.append({
+                    "from_course": t.get("from_course"),
+                    "course_title": t.get("course_title"),
+                    "units": t.get("units"),
+                    "department": t.get("department"),
+                    "matched_equivalent": {
+                        "course": eq.get("course"),
+                        "title": eq.get("title")
+                    }
+                })
+    return matches
 
 @app.post("/transfers")
 def transfers():
@@ -97,7 +122,6 @@ def transfers():
 
     if not from_code or not to_code:
         return jsonify({"error": "Missing 'from' or 'to' code"}), 400
-
     if from_code == to_code:
         return jsonify({"error": "From and To must be different schools"}), 400
 
@@ -111,60 +135,55 @@ def transfers():
     except Exception as e:
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
-@app.post("/lookup")
-def lookup():
+@app.post("/lookup_batch")
+def lookup_batch():
     """
-    Input:  { "from": "14", "to": "29", "query": "HORT 53" }
-    Output: { "query": "...", "matches": [ {from_course, course_title, units, department, matched_equivalent} ... ] }
+    Input:
+      { "from": "14", "to": "29", "queries": ["HORT 53", "Soil Science and Management"] }
+
+    Output:
+      { results: [ {query, matches_count, matches:[...]} ... ] }
     """
     body = request.get_json(force=True) or {}
     from_code = str(body.get("from", "")).strip()
     to_code = str(body.get("to", "")).strip()
-    query = str(body.get("query", "")).strip()
+    queries = body.get("queries", [])
 
-    if not from_code or not to_code or not query:
-        return jsonify({"error": "Missing 'from', 'to', or 'query'"}), 400
-
+    if not from_code or not to_code or not isinstance(queries, list):
+        return jsonify({"error": "Missing 'from', 'to', or invalid 'queries' list"}), 400
     if from_code == to_code:
         return jsonify({"error": "From and To must be different schools"}), 400
 
+    cleaned = []
+    for q in queries:
+        q = str(q or "").strip()
+        if q:
+            cleaned.append(q)
+
+    # Keep it reasonable for now
+    cleaned = cleaned[:50]
+
     try:
-        data = fetch_assist_transfers(from_code, to_code)
-        if not data:
+        payload = fetch_assist_transfers(from_code, to_code)
+        if not payload:
             return jsonify({"error": "No data returned from ASSIST for this pair"}), 404
 
-        q = normalize(query)
-
-        matches = []
-        for t in data.get("transfers", []):
-            for eq in (t.get("equivalents") or []):
-                eq_course = normalize(eq.get("course"))
-                eq_title = normalize(eq.get("title"))
-
-                # Match if user typed exact course code OR exact title
-                if q and (q == eq_course or q == eq_title):
-                    matches.append({
-                        "from_course": t.get("from_course"),
-                        "course_title": t.get("course_title"),
-                        "units": t.get("units"),
-                        "department": t.get("department"),
-                        "matched_equivalent": {
-                            "course": eq.get("course"),
-                            "title": eq.get("title")
-                        }
-                    })
-
-        # Also helpful: if user types something like "hort 53" but file has "HORT 53"
-        # we already normalized, so exact works.
+        results = []
+        for q in cleaned:
+            matches = find_matches_in_payload(payload, q)
+            results.append({
+                "query": q,
+                "matches_count": len(matches),
+                "matches": matches
+            })
 
         return jsonify({
-            "query": query,
             "from_code": from_code,
             "to_code": to_code,
-            "from_college": data.get("from_college"),
-            "to_college": data.get("to_college"),
-            "matches_count": len(matches),
-            "matches": matches
+            "from_college": payload.get("from_college"),
+            "to_college": payload.get("to_college"),
+            "academic_year": payload.get("academic_year"),
+            "results": results
         })
     except requests.HTTPError as e:
         return jsonify({"error": f"ASSIST API error: {str(e)}"}), 502
