@@ -8,11 +8,36 @@
     <h1>Transfer Results</h1>
 
     <p id="summary"></p>
+
+    <hr />
+
+    <h2>Classes you’ve taken (lookup)</h2>
+    <p style="margin-top: 0;">
+      Type a course code or course title from the <em>equivalents</em> list (example: <strong>HORT 53</strong> or <strong>Soil Science and Management</strong>)
+    </p>
+
+    <input id="takenInput" type="text" placeholder="e.g. HORT 53" style="width: 320px;" />
+    <button id="takenBtn">Find match</button>
+    <p id="takenMsg" style="color:red;"></p>
+
+    <div id="takenResults"></div>
+
+    <hr />
+
     <div id="results"></div>
 
     <p><a href="/">← Back</a></p>
 
     <script>
+      function esc(s) {
+        return String(s || "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
       async function loadResults() {
         const params = new URLSearchParams(window.location.search);
         const from = params.get("from");
@@ -21,13 +46,24 @@
         const summary = document.getElementById("summary");
         const results = document.getElementById("results");
 
+        const takenInput = document.getElementById("takenInput");
+        const takenBtn = document.getElementById("takenBtn");
+        const takenMsg = document.getElementById("takenMsg");
+        const takenResults = document.getElementById("takenResults");
+
+        function setTakenMsg(msg) {
+          takenMsg.textContent = msg || "";
+        }
+
         if (!from || !to) {
           summary.textContent = "Missing school selection.";
+          takenBtn.disabled = true;
           return;
         }
 
         summary.textContent = "Loading transfers...";
 
+        // Load main transfer list
         try {
           const res = await fetch("http://localhost:8000/transfers", {
             method: "POST",
@@ -43,40 +79,105 @@
           }
 
           summary.innerHTML = `
-            <strong>From:</strong> ${data.from_college}<br/>
-            <strong>To:</strong> ${data.to_college}<br/>
-            <strong>Year:</strong> ${data.academic_year || "N/A"}<br/>
-            <strong>Transfers:</strong> ${data.transfers.length}
+            <strong>From:</strong> ${esc(data.from_college)} (code ${esc(data.from_code)})<br/>
+            <strong>To:</strong> ${esc(data.to_college)} (code ${esc(data.to_code)})<br/>
+            <strong>Year:</strong> ${esc(data.academic_year || "N/A")}<br/>
+            <strong>Transfers:</strong> ${esc(data.transfers.length)}
           `;
 
           if (!data.transfers.length) {
             results.innerHTML = "<p>No transfers found.</p>";
+          } else {
+            const html = data.transfers.map(t => {
+              const eqs = (t.equivalents || []).length
+                ? `<ul>${t.equivalents.map(e =>
+                    `<li>${esc(e.course)}${e.title ? ` — ${esc(e.title)}` : ""}</li>`
+                  ).join("")}</ul>`
+                : "<p>No equivalent course</p>";
+
+              return `
+                <div style="margin-bottom:16px;">
+                  <strong>${esc(t.from_course)}</strong>
+                  ${t.course_title ? ` — ${esc(t.course_title)}` : ""}
+                  <div style="font-size:0.9em;">
+                    ${t.department ? esc(t.department) : ""}${t.units !== undefined ? ` • Units: ${esc(t.units)}` : ""}
+                  </div>
+                  ${eqs}
+                </div>
+              `;
+            }).join("");
+
+            results.innerHTML = html;
+          }
+
+        } catch (err) {
+          summary.textContent = "Error loading results.";
+          return;
+        }
+
+        // Lookup handler (searches equivalents and returns from_course + course_title)
+        async function runLookup() {
+          setTakenMsg("");
+          takenResults.innerHTML = "";
+
+          const q = takenInput.value.trim();
+          if (!q) {
+            setTakenMsg("Type a course code or title first.");
             return;
           }
 
-          const html = data.transfers.map(t => {
-            const eqs = t.equivalents.length
-              ? `<ul>${t.equivalents.map(e =>
-                  `<li>${e.course}${e.title ? ` — ${e.title}` : ""}</li>`
-                ).join("")}</ul>`
-              : "<p>No equivalent course</p>";
+          takenBtn.disabled = true;
+          takenBtn.textContent = "Searching...";
 
-            return `
-              <div style="margin-bottom:16px;">
-                <strong>${t.from_course}</strong>
-                ${t.course_title ? ` — ${t.course_title}` : ""}
-                <div style="font-size:0.9em;">
-                  ${t.department || ""} ${t.units ? `• Units: ${t.units}` : ""}
-                </div>
-                ${eqs}
-              </div>
+          try {
+            const res = await fetch("http://localhost:8000/lookup", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ from, to, query: q })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+              setTakenMsg(data.error || "Lookup failed.");
+              return;
+            }
+
+            if (!data.matches_count) {
+              takenResults.innerHTML = `<p>No match found for <strong>${esc(q)}</strong>.</p>`;
+              return;
+            }
+
+            // Plain + easy to read:
+            // "You entered: X" then list "FROM_COURSE — COURSE_TITLE (matched: EQUIV ...)"
+            const list = data.matches.map(m => {
+              const matchEq = m.matched_equivalent || {};
+              return `
+                <li style="margin-bottom: 10px;">
+                  <div><strong>${esc(m.from_course)}</strong> — ${esc(m.course_title)}</div>
+                  <div style="font-size: 0.9em;">
+                    Matched: ${esc(matchEq.course)}${matchEq.title ? ` — ${esc(matchEq.title)}` : ""}
+                  </div>
+                </li>
+              `;
+            }).join("");
+
+            takenResults.innerHTML = `
+              <p>Matches for <strong>${esc(q)}</strong>:</p>
+              <ol>${list}</ol>
             `;
-          }).join("");
-
-          results.innerHTML = html;
-        } catch (err) {
-          summary.textContent = "Error loading results.";
+          } catch (err) {
+            setTakenMsg("Lookup failed (check backend / console).");
+          } finally {
+            takenBtn.disabled = false;
+            takenBtn.textContent = "Find match";
+          }
         }
+
+        takenBtn.addEventListener("click", runLookup);
+        takenInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") runLookup();
+        });
       }
 
       window.addEventListener("DOMContentLoaded", loadResults);
