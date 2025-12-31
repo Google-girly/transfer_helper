@@ -1,0 +1,176 @@
+/* =========================
+   Theme variables
+========================= */
+:root {
+  --primary-blue: #42a5f5;
+  --primary-blue-hover: #2196f3;
+  --light-blue: #e3f2fd;
+  --very-light-blue: #f5faff;
+}
+
+/* =========================
+   Base
+========================= */
+body {
+  background: var(--light-blue);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #1f2937;
+}
+
+.text-muted {
+  color: #6b7280 !important;
+}
+
+/* Limit width for professional layout */
+.app-container {
+  max-width: 920px;
+}
+
+/* =========================
+   Card & layout
+========================= */
+.card {
+  border-radius: 24px;
+  border: none;
+}
+
+.card-body {
+  border-radius: 24px;
+}
+
+/* =========================
+   Headings
+========================= */
+h1 {
+  color: var(--primary-blue);
+  font-weight: 600;
+}
+
+h2 {
+  color: var(--primary-blue);
+}
+
+/* =========================
+   Alerts
+========================= */
+.alert-info {
+  background: var(--light-blue);
+  border-left: 4px solid var(--primary-blue);
+  border-radius: 12px;
+  color: #555;
+}
+
+/* =========================
+   Inputs
+========================= */
+.form-control {
+  border-radius: 12px;
+  border: 2px solid #e0e0e0;
+  padding: 14px 18px;
+  background: #fafafa;
+  transition: all 0.3s ease;
+}
+
+.form-control:focus {
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(66, 165, 245, 0.1);
+  background: white;
+}
+
+.form-label {
+  font-size: 1.05em;
+}
+
+/* =========================
+   Classes section
+========================= */
+.classes-section {
+  background: var(--very-light-blue);
+  border-radius: 16px;
+}
+
+.class-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.class-row input {
+  flex: 1;
+}
+
+/* =========================
+   Buttons
+========================= */
+.btn-primary {
+  background: var(--primary-blue);
+  border-color: var(--primary-blue);
+  border-radius: 12px;
+  padding: 10px 24px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+  background: var(--primary-blue-hover);
+  border-color: var(--primary-blue-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(66, 165, 245, 0.35);
+}
+
+.btn-primary:disabled {
+  background: #ccc;
+  border-color: #ccc;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-danger {
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.btn-outline-primary {
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+/* =========================
+   Results
+========================= */
+.result-item {
+  background: var(--very-light-blue);
+  padding: 20px;
+  border-radius: 14px;
+  border-left: 4px solid var(--primary-blue);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  margin-bottom: 16px;
+  line-height: 1.4;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.result-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+}
+
+.result-item.no-match {
+  border-left-color: #f59e0b;
+}
+
+.list-group-item {
+  border-radius: 10px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.ge-info {
+  background: var(--light-blue);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.9em;
+}
+
+.ge-info strong {
+  color: var(--primary-blue);
+}

@@ -2,43 +2,63 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>School Transfer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Transfer Helper</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="/style.css" rel="stylesheet">
   </head>
+
   <body>
-    <h1>School Transfer</h1>
+    <div class="container my-5 app-container">
+      <div class="card shadow-lg">
+        <div class="card-body p-5">
 
-    <p><strong>Tip:</strong> Start typing a school name and pick from the suggestions.</p>
+          <h1 class="text-center mb-2">Transfer Helper</h1>
+          <p class="text-center text-muted mb-4">
+            Check how your completed classes transfer between schools
+          </p>
 
-    <label>
-      From:
-      <input id="fromInput" list="schoolsList" placeholder="Type a school..." style="width: 420px;" />
-    </label>
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle me-1"></i>
+            Start typing a school name and choose from the list.
+          </div>
 
-    <br /><br />
+          <div class="mb-4">
+            <label class="form-label fw-bold">From School</label>
+            <input id="fromInput" list="schoolsList" class="form-control form-control-lg" autocomplete="off">
+          </div>
 
-    <label>
-      To:
-      <input id="toInput" list="schoolsList" placeholder="Type a school..." style="width: 420px;" />
-    </label>
+          <div class="mb-4">
+            <label class="form-label fw-bold">To School</label>
+            <input id="toInput" list="schoolsList" class="form-control form-control-lg" autocomplete="off">
+          </div>
 
-    <datalist id="schoolsList"></datalist>
+          <datalist id="schoolsList"></datalist>
 
-    <br /><br />
+          <div class="classes-section p-4 mb-4">
+            <h2 class="h5 mb-2">Classes You've Taken</h2>
+            <p class="text-muted mb-3">
+              Enter course codes or titles (one per row).
+            </p>
 
-    <h2>Classes you’ve taken at the “From” school</h2>
-    <p style="margin-top:0;">
-      Add one class per row. You can enter either a course code (e.g. <strong>HORT 53</strong>)
-      or a course title (e.g. <strong>Soil Science and Management</strong>).
-    </p>
+            <div id="rows"></div>
 
-    <div id="rows"></div>
+            <button id="addRow" class="btn btn-primary mt-2">
+              <i class="bi bi-plus-lg"></i> Add another class
+            </button>
+          </div>
 
-    <button id="addRow" type="button">+ Add another class</button>
+          <button id="submit" disabled class="btn btn-primary btn-lg w-100">
+            Find Transfer Matches
+          </button>
 
-    <br /><br />
+          <div id="warning" class="alert alert-warning mt-3 d-none"></div>
 
-    <button id="submit" disabled>Submit</button>
-    <p id="warning" style="color:red;"></p>
+        </div>
+      </div>
+    </div>
 
     <script>
       async function init() {
@@ -47,123 +67,63 @@
         const list = document.getElementById("schoolsList");
         const submit = document.getElementById("submit");
         const warning = document.getElementById("warning");
-
         const rowsEl = document.getElementById("rows");
         const addRowBtn = document.getElementById("addRow");
 
-        // Save schools in a map: exact schoolName -> code
         const nameToCode = new Map();
 
         function setWarning(msg) {
-          warning.textContent = msg || "";
+          warning.textContent = msg;
+          warning.classList.toggle("d-none", !msg);
         }
 
-        function getSelectedCode(inputEl) {
-          const name = (inputEl.value || "").trim();
-          return nameToCode.get(name) || "";
+        function getSelectedCode(input) {
+          return nameToCode.get(input.value.trim()) || "";
         }
 
         function validate() {
-          setWarning("");
-          submit.disabled = true;
-
-          const fromCode = getSelectedCode(fromInput);
-          const toCode = getSelectedCode(toInput);
-
-          if (!fromCode || !toCode) return;
-
-          if (fromCode === toCode) {
-            setWarning("From and To schools must be different.");
-            return;
-          }
-
-          submit.disabled = false;
+          submit.disabled = !getSelectedCode(fromInput) || !getSelectedCode(toInput);
         }
 
-        function createRow(initialValue = "") {
+        function createRow() {
           const row = document.createElement("div");
-          row.style.marginBottom = "8px";
+          row.className = "class-row mb-2";
 
-          const input = document.createElement("input");
-          input.type = "text";
-          input.placeholder = "e.g. HORT 53";
-          input.style.width = "320px";
-          input.value = initialValue;
+          row.innerHTML = `
+            <input class="form-control" placeholder="e.g. HORT 53 or Soil Science">
+            <button class="btn btn-danger">Remove</button>
+          `;
 
-          const removeBtn = document.createElement("button");
-          removeBtn.type = "button";
-          removeBtn.textContent = "Remove";
-          removeBtn.style.marginLeft = "8px";
-
-          removeBtn.onclick = () => {
-            row.remove();
-            // Always keep at least 1 row
-            if (!rowsEl.querySelector("input")) createRow("");
-          };
-
-          row.appendChild(input);
-          row.appendChild(removeBtn);
+          row.querySelector("button").onclick = () => row.remove();
           rowsEl.appendChild(row);
-
-          return input;
         }
 
-        function getClassesFromRows() {
-          const inputs = Array.from(rowsEl.querySelectorAll("input"));
-          return inputs
-            .map(i => (i.value || "").trim())
-            .filter(Boolean)
-            .slice(0, 50);
-        }
+        for (let i = 0; i < 3; i++) createRow();
+        addRowBtn.onclick = createRow;
 
-        // Start with 3 rows (easy UX)
-        createRow("");
-        createRow("");
-        createRow("");
+        const res = await fetch("http://localhost:8000/schools");
+        const schools = await res.json();
 
-        addRowBtn.onclick = () => createRow("");
+        schools.forEach(s => {
+          nameToCode.set(s.schoolName, String(s.code));
+          const opt = document.createElement("option");
+          opt.value = s.schoolName;
+          list.appendChild(opt);
+        });
 
-        try {
-          const res = await fetch("http://localhost:8000/schools");
-          if (!res.ok) throw new Error("HTTP " + res.status);
-          const schools = await res.json();
+        fromInput.oninput = validate;
+        toInput.oninput = validate;
 
-          schools
-            .filter(s => s && s.schoolName && s.code !== undefined)
-            .sort((a, b) => (a.schoolName || "").localeCompare(b.schoolName || ""))
-            .forEach(s => {
-              nameToCode.set(s.schoolName, String(s.code));
-              const opt = document.createElement("option");
-              opt.value = s.schoolName;
-              list.appendChild(opt);
-            });
+        submit.onclick = () => {
+          const classes = [...rowsEl.querySelectorAll("input")]
+            .map(i => i.value.trim())
+            .filter(Boolean);
 
-          fromInput.addEventListener("input", validate);
-          toInput.addEventListener("input", validate);
+          localStorage.setItem("takenClasses", JSON.stringify(classes));
 
-          submit.addEventListener("click", () => {
-            const fromCode = getSelectedCode(fromInput);
-            const toCode = getSelectedCode(toInput);
-
-            if (!fromCode || !toCode) {
-              setWarning("Please pick schools from the suggestions list.");
-              return;
-            }
-            if (fromCode === toCode) {
-              setWarning("From and To schools must be different.");
-              return;
-            }
-
-            const classes = getClassesFromRows();
-            localStorage.setItem("takenClasses", JSON.stringify(classes));
-
-            window.location.href =
-              `/results?from=${encodeURIComponent(fromCode)}&to=${encodeURIComponent(toCode)}`;
-          });
-        } catch (err) {
-          console.error(err);
-          setWarning("Failed to load schools.");
-        }
+          window.location.href =
+            `/results?from=${getSelectedCode(fromInput)}&to=${getSelectedCode(toInput)}`;
+        };
       }
 
       window.addEventListener("DOMContentLoaded", init);

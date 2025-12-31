@@ -2,6 +2,7 @@ import json
 import os
 import re
 import requests
+from datetime import datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -10,8 +11,57 @@ CORS(app, origins=["http://localhost:3000"])
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Simple in-memory cache so you don't hammer the API while testing
-CACHE = {}
+# Cache ASSIST articulation payloads (from/to transfers)
+TRANSFERS_CACHE = {}
+
+# Cache transferability (IGETC/CSUGE/CALGETC) lists: key = (institutionId, academicYearId, listType)
+GE_CACHE = {}
+
+
+# ---------------------------
+# Utilities
+# ---------------------------
+
+def normalize(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+def normalize_course_code(s: str) -> str:
+    """
+    Normalize course code-ish inputs like:
+      "engl1b" -> "ENGL 1B"
+      " ENGL   1B " -> "ENGL 1B"
+    We keep it simple: uppercase + single spaces.
+    """
+    s = (s or "").strip().upper()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+def is_currently_approved(end_date_str: str) -> bool:
+    """
+    Same idea as your IGETC.py:
+    - endDate missing/null => approved
+    - endDate in future => approved
+    - endDate in past => not approved
+    """
+    if not end_date_str:
+        return True
+    try:
+        end_dt = datetime.fromisoformat(end_date_str)
+        return end_dt > datetime.utcnow()
+    except ValueError:
+        return False
+
+def fetch_api_data(url: str) -> dict:
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
+# ---------------------------
+# Schools
+# ---------------------------
 
 @app.get("/schools")
 def schools():
@@ -20,10 +70,15 @@ def schools():
         data = json.load(f)
     return jsonify(data)
 
+
+# ---------------------------
+# ASSIST articulation (transfers)
+# ---------------------------
+
 def fetch_assist_transfers(from_code: str, to_code: str):
     cache_key = f"{from_code}->{to_code}"
-    if cache_key in CACHE:
-        return CACHE[cache_key]
+    if cache_key in TRANSFERS_CACHE:
+        return TRANSFERS_CACHE[cache_key]
 
     url = f"https://assist.org/api/articulation/Agreements?Key=75/{from_code}/to/{to_code}/AllPrefixes"
     r = requests.get(url, timeout=30)
@@ -81,38 +136,9 @@ def fetch_assist_transfers(from_code: str, to_code: str):
         "transfers": transfers
     }
 
-    CACHE[cache_key] = payload
+    TRANSFERS_CACHE[cache_key] = payload
     return payload
 
-def normalize(s: str) -> str:
-    s = (s or "").strip().lower()
-    s = re.sub(r"\s+", " ", s)
-    return s
-
-def find_matches_in_payload(payload: dict, query: str):
-    q = normalize(query)
-    matches = []
-    if not q:
-        return matches
-
-    for t in payload.get("transfers", []):
-        for eq in (t.get("equivalents") or []):
-            eq_course = normalize(eq.get("course"))
-            eq_title = normalize(eq.get("title"))
-
-            # Exact match (case-insensitive) on either code or title
-            if q == eq_course or q == eq_title:
-                matches.append({
-                    "from_course": t.get("from_course"),
-                    "course_title": t.get("course_title"),
-                    "units": t.get("units"),
-                    "department": t.get("department"),
-                    "matched_equivalent": {
-                        "course": eq.get("course"),
-                        "title": eq.get("title")
-                    }
-                })
-    return matches
 
 @app.post("/transfers")
 def transfers():
@@ -135,19 +161,216 @@ def transfers():
     except Exception as e:
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
+
+# ---------------------------
+# GE / IGETC / CALGETC lookup
+# ---------------------------
+
+def get_ge_courses(institution_id: int, academic_year_id: int, list_type: str) -> dict:
+    """
+    Fetch transferability courses (IGETC/CSUGE/CALGETC/etc) for an institution.
+    Returns a dict containing:
+      - institutionName, academicYear, listType
+      - index_by_code: { "ENGL 1B": {transferAreas, isCurrentlyApproved, ...}, ... }
+      - index_by_title: { "introduction to literature": {...}, ... }  (optional)
+    """
+    cache_key = (institution_id, academic_year_id, list_type)
+    if cache_key in GE_CACHE:
+        return GE_CACHE[cache_key]
+
+    url = (
+        "https://www.assist.org/api/transferability/courses"
+        f"?institutionId={institution_id}"
+        f"&academicYearId={academic_year_id}"
+        f"&listType={list_type}"
+    )
+
+    data = fetch_api_data(url)
+
+    courses_out = []
+    # FIXED: Use "courseInformationList" instead of "courses"
+    for c in (data.get("courseInformationList") or []):
+        # FIXED: Build course name from identifier and courseTitle
+        identifier = (c.get("identifier") or "").strip()
+        title = (c.get("courseTitle") or "").strip()
+        course_name = f"{identifier} - {title}".strip(" -")
+        
+        # FIXED: Extract transfer area codes properly
+        transfer_areas = [
+            a.get("code")
+            for a in (c.get("transferAreas") or [])
+            if a.get("code")
+        ]
+
+        end_date = c.get("endDate")
+        courses_out.append({
+            "course": course_name,
+            "transferAreas": transfer_areas,
+            "approvedDate": c.get("beginDate"),
+            "approvedTerm": c.get("beginTermCode"),
+            "removedDate": end_date,
+            "removedTerm": c.get("endTermCode"),
+            "isCurrentlyApproved": is_currently_approved(end_date),
+        })
+
+    # Build indexes for fast lookup
+    index_by_code = {}
+    index_by_title = {}
+
+    for item in courses_out:
+        full = item["course"]
+
+        # Split "ENGL 1B - Something" into code + title if possible
+        code_part = full
+        title_part = ""
+
+        if " - " in full:
+            code_part, title_part = full.split(" - ", 1)
+            code_part = code_part.strip()
+            title_part = title_part.strip()
+
+        code_norm = normalize_course_code(code_part)
+        if code_norm:
+            index_by_code[code_norm] = item
+
+        title_norm = normalize(title_part)
+        if title_norm:
+            index_by_title[title_norm] = item
+
+        # Also index by full string (sometimes user types entire thing)
+        full_norm = normalize(full)
+        if full_norm:
+            index_by_title[full_norm] = item
+
+    out = {
+        "institutionName": data.get("institutionName"),
+        "academicYear": (data.get("academicYear") or {}).get("code"),
+        "listType": data.get("listType"),
+        "index_by_code": index_by_code,
+        "index_by_title": index_by_title,
+    }
+
+    GE_CACHE[cache_key] = out
+    return out
+
+
+def ge_lookup_for_equivalent(eq_course: str, eq_title: str, institution_id: int, academic_year_id: int, list_type: str):
+    """
+    Try to find GE/IGETC/CALGETC record for the equivalent course.
+    Matches by:
+      - course code (e.g. "ENGL 1B")
+      - title (e.g. "Introduction to Literature")
+    Returns GE record dict or None.
+    """
+    ge = get_ge_courses(institution_id, academic_year_id, list_type)
+
+    code_norm = normalize_course_code(eq_course)
+    title_norm = normalize(eq_title)
+
+    rec = None
+    if code_norm and code_norm in ge["index_by_code"]:
+        rec = ge["index_by_code"][code_norm]
+    elif title_norm and title_norm in ge["index_by_title"]:
+        rec = ge["index_by_title"][title_norm]
+
+    return rec
+
+
+# ---------------------------
+# Lookup batch (augment with GE/IGETC/CALGETC areas)
+# ---------------------------
+
+def find_matches_in_payload(payload: dict, query: str, ge_academic_year_id: int, ge_list_type: str):
+    """
+    For a given query, find articulation matches (equivalents),
+    and attach GE/IGETC/CALGETC info for the matched equivalent course.
+    """
+    q_norm = normalize(query)
+    q_code_norm = normalize_course_code(query)
+
+    matches = []
+    if not query.strip():
+        return matches
+
+    from_inst_id = int(payload["from_code"])  # using from_code as institutionId
+
+    for t in payload.get("transfers", []):
+        for eq in (t.get("equivalents") or []):
+            eq_course = (eq.get("course") or "").strip()
+            eq_title = (eq.get("title") or "").strip()
+
+            eq_course_norm = normalize_course_code(eq_course)
+            eq_title_norm = normalize(eq_title)
+
+            # Match user input exactly (case-insensitive) by:
+            # - code OR title
+            is_match = False
+            if q_code_norm and q_code_norm == eq_course_norm:
+                is_match = True
+            elif q_norm and (q_norm == eq_title_norm or q_norm == normalize(eq_course) or q_norm == normalize(f"{eq_course} - {eq_title}")):
+                is_match = True
+
+            if not is_match:
+                continue
+
+            # Attach GE record if found
+            ge_rec = None
+            try:
+                ge_rec = ge_lookup_for_equivalent(
+                    eq_course=eq_course,
+                    eq_title=eq_title,
+                    institution_id=from_inst_id,
+                    academic_year_id=ge_academic_year_id,
+                    list_type=ge_list_type
+                )
+            except Exception:
+                # If GE lookup fails for this institution/list, we still return the match without GE info
+                ge_rec = None
+
+            matches.append({
+                "from_course": t.get("from_course"),
+                "course_title": t.get("course_title"),
+                "units": t.get("units"),
+                "department": t.get("department"),
+                "matched_equivalent": {
+                    "course": eq_course,
+                    "title": eq_title
+                },
+                "ge": None if not ge_rec else {
+                    "transferAreas": ge_rec.get("transferAreas") or [],
+                    "isCurrentlyApproved": bool(ge_rec.get("isCurrentlyApproved")),
+                    "approvedTerm": ge_rec.get("approvedTerm"),
+                    "removedTerm": ge_rec.get("removedTerm"),
+                    "approvedDate": ge_rec.get("approvedDate"),
+                    "removedDate": ge_rec.get("removedDate"),
+                }
+            })
+
+    return matches
+
+
 @app.post("/lookup_batch")
 def lookup_batch():
     """
     Input:
-      { "from": "14", "to": "29", "queries": ["HORT 53", "Soil Science and Management"] }
+      {
+        "from": "133",
+        "to": "29",
+        "queries": ["ENGL 1B", "Soil Science and Management"],
 
-    Output:
-      { results: [ {query, matches_count, matches:[...]} ... ] }
+        // optional:
+        "geAcademicYearId": 76,
+        "geListType": "CALGETC"  // can be "IGETC", "CSUGE", "CALGETC", etc.
+      }
     """
     body = request.get_json(force=True) or {}
+
     from_code = str(body.get("from", "")).strip()
     to_code = str(body.get("to", "")).strip()
     queries = body.get("queries", [])
+
+    ge_academic_year_id = int(body.get("geAcademicYearId", 76))
+    ge_list_type = str(body.get("geListType", "CALGETC")).strip() or "CALGETC"  # Changed default to CALGETC
 
     if not from_code or not to_code or not isinstance(queries, list):
         return jsonify({"error": "Missing 'from', 'to', or invalid 'queries' list"}), 400
@@ -159,8 +382,6 @@ def lookup_batch():
         q = str(q or "").strip()
         if q:
             cleaned.append(q)
-
-    # Keep it reasonable for now
     cleaned = cleaned[:50]
 
     try:
@@ -170,7 +391,7 @@ def lookup_batch():
 
         results = []
         for q in cleaned:
-            matches = find_matches_in_payload(payload, q)
+            matches = find_matches_in_payload(payload, q, ge_academic_year_id, ge_list_type)
             results.append({
                 "query": q,
                 "matches_count": len(matches),
@@ -183,12 +404,16 @@ def lookup_batch():
             "from_college": payload.get("from_college"),
             "to_college": payload.get("to_college"),
             "academic_year": payload.get("academic_year"),
+            "geListType": ge_list_type,
+            "geAcademicYearId": ge_academic_year_id,
             "results": results
         })
+
     except requests.HTTPError as e:
         return jsonify({"error": f"ASSIST API error: {str(e)}"}), 502
     except Exception as e:
         return jsonify({"error": f"Server error: {str(e)}"}), 500
+
 
 if __name__ == "__main__":
     app.run(port=8000, debug=True)
