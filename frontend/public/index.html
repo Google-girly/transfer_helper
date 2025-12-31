@@ -26,23 +26,31 @@
     <br /><br />
 
     <button id="submit" disabled>Submit</button>
-
     <p id="warning" style="color:red;"></p>
-
-    <pre id="output"></pre>
 
     <script>
       async function loadSchools() {
         const from = document.getElementById("from");
         const to = document.getElementById("to");
         const submit = document.getElementById("submit");
-        const output = document.getElementById("output");
         const warning = document.getElementById("warning");
+
+        function validate() {
+          warning.textContent = "";
+          submit.disabled = true;
+
+          if (!from.value || !to.value) return;
+
+          if (from.value === to.value) {
+            warning.textContent = "From and To schools must be different.";
+            return;
+          }
+
+          submit.disabled = false;
+        }
 
         try {
           const res = await fetch("http://localhost:8000/schools");
-          if (!res.ok) throw new Error("HTTP " + res.status);
-
           const schools = await res.json();
 
           schools.sort((a, b) =>
@@ -53,8 +61,6 @@
           to.innerHTML = '<option value="">Select a school...</option>';
 
           schools.forEach((s) => {
-            if (!s.schoolName) return;
-
             const opt1 = document.createElement("option");
             opt1.value = s.code;
             opt1.textContent = s.schoolName;
@@ -65,45 +71,14 @@
             to.appendChild(opt2);
           });
 
-          function validate() {
-            output.textContent = "";
-            warning.textContent = "";
-
-            if (!from.value || !to.value) {
-              submit.disabled = true;
-              return;
-            }
-
-            if (from.value === to.value) {
-              submit.disabled = true;
-              warning.textContent =
-                "From and To schools must be different.";
-              return;
-            }
-
-            submit.disabled = false;
-          }
-
           from.addEventListener("change", validate);
           to.addEventListener("change", validate);
 
           submit.onclick = () => {
-            const fromName = from.options[from.selectedIndex].text;
-            const fromCode = from.value;
-
-            const toName = to.options[to.selectedIndex].text;
-            const toCode = to.value;
-
-            output.textContent =
-              `FROM:\n` +
-              `  Name: ${fromName}\n` +
-              `  Code: ${fromCode}\n\n` +
-              `TO:\n` +
-              `  Name: ${toName}\n` +
-              `  Code: ${toCode}`;
+            const url = `/results?from=${from.value}&to=${to.value}`;
+            window.location.href = url;
           };
         } catch (err) {
-          console.error("Failed to load schools:", err);
           warning.textContent = "Failed to load schools.";
         }
       }

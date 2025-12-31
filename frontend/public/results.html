@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Transfer Results</title>
+  </head>
+  <body>
+    <h1>Transfer Results</h1>
+
+    <p id="summary"></p>
+    <div id="results"></div>
+
+    <p><a href="/">← Back</a></p>
+
+    <script>
+      async function loadResults() {
+        const params = new URLSearchParams(window.location.search);
+        const from = params.get("from");
+        const to = params.get("to");
+
+        const summary = document.getElementById("summary");
+        const results = document.getElementById("results");
+
+        if (!from || !to) {
+          summary.textContent = "Missing school selection.";
+          return;
+        }
+
+        summary.textContent = "Loading transfers...";
+
+        try {
+          const res = await fetch("http://localhost:8000/transfers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ from, to })
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            summary.textContent = data.error || "Failed to load transfers.";
+            return;
+          }
+
+          summary.innerHTML = `
+            <strong>From:</strong> ${data.from_college}<br/>
+            <strong>To:</strong> ${data.to_college}<br/>
+            <strong>Year:</strong> ${data.academic_year || "N/A"}<br/>
+            <strong>Transfers:</strong> ${data.transfers.length}
+          `;
+
+          if (!data.transfers.length) {
+            results.innerHTML = "<p>No transfers found.</p>";
+            return;
+          }
+
+          const html = data.transfers.map(t => {
+            const eqs = t.equivalents.length
+              ? `<ul>${t.equivalents.map(e =>
+                  `<li>${e.course}${e.title ? ` — ${e.title}` : ""}</li>`
+                ).join("")}</ul>`
+              : "<p>No equivalent course</p>";
+
+            return `
+              <div style="margin-bottom:16px;">
+                <strong>${t.from_course}</strong>
+                ${t.course_title ? ` — ${t.course_title}` : ""}
+                <div style="font-size:0.9em;">
+                  ${t.department || ""} ${t.units ? `• Units: ${t.units}` : ""}
+                </div>
+                ${eqs}
+              </div>
+            `;
+          }).join("");
+
+          results.innerHTML = html;
+        } catch (err) {
+          summary.textContent = "Error loading results.";
+        }
+      }
+
+      window.addEventListener("DOMContentLoaded", loadResults);
+    </script>
+  </body>
+</html>
