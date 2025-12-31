@@ -21,7 +21,7 @@ def fetch_api_data(url):
 def get_transfer_data(from_code, to_code):
     """Get transfer data and return as JSON object"""
     # Build API URL using the provided arguments
-    api_url = f"https://assist.org/api/articulation/Agreements?Key=75/{from_code}/to/{to_code}/AllPrefixes"
+    api_url = f"https://www.assist.org/api/articulation/Agreements?Key=76/{to_code}/to/{from_code}/AllSendingPrefixes"
     raw_data = fetch_api_data(api_url)
     
     if not raw_data:
