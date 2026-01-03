@@ -15,6 +15,16 @@ body {
   background: var(--light-blue);
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   color: #1f2937;
+
+  /* Make room for the sidebar toggle so it never covers content */
+  padding-left: 74px;
+}
+
+/* On small screens, reduce padding a bit */
+@media (max-width: 576px) {
+  body {
+    padding-left: 58px;
+  }
 }
 
 .text-muted {
@@ -24,6 +34,86 @@ body {
 /* Limit width for professional layout */
 .app-container {
   max-width: 920px;
+}
+
+/* =========================
+   Sidebar toggle (ChatGPT-ish)
+========================= */
+.history-toggle {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+
+  /* IMPORTANT:
+     Bootstrap offcanvas sits above ~1045.
+     Keep this BELOW offcanvas so it never covers the sidebar header. */
+  z-index: 1030;
+
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+
+.history-toggle i {
+  font-size: 1.2rem;
+}
+
+/* Offcanvas styling */
+.history-offcanvas {
+  width: 380px;
+}
+
+@media (max-width: 576px) {
+  .history-offcanvas {
+    width: 92vw;
+  }
+}
+
+.history-accordion-item {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(0,0,0,0.06);
+  margin-bottom: 10px;
+}
+
+.history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.history-schools {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.history-meta {
+  margin-top: 2px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-item {
+  background: var(--very-light-blue);
+  border: 1px solid rgba(0,0,0,0.04);
+  border-left: 4px solid var(--primary-blue);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+/* Make accordion button look clean */
+.accordion-button {
+  background: white;
+}
+.accordion-button:focus {
+  box-shadow: none;
 }
 
 /* =========================
