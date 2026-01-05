@@ -1,266 +1,156 @@
-/* =========================
-   Theme variables
-========================= */
-:root {
-  --primary-blue: #42a5f5;
-  --primary-blue-hover: #2196f3;
-  --light-blue: #e3f2fd;
-  --very-light-blue: #f5faff;
-}
+* { box-sizing: border-box; }
 
-/* =========================
-   Base
-========================= */
+html, body { height: 100%; }
+
 body {
-  background: var(--light-blue);
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  color: #1f2937;
-
-  /* Make room for the sidebar toggle so it never covers content */
-  padding-left: 74px;
+  margin: 0;
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+  color: #000;
+  background: #fff;
 }
 
-/* On small screens, reduce padding a bit */
-@media (max-width: 576px) {
-  body {
-    padding-left: 58px;
-  }
+/* Simple page layout */
+.page { padding: 16px; }
+.shell { max-width: 900px; margin: 0 auto; }
+
+/* Basic blocks */
+.panel { border: 1px solid #000; padding: 16px; }
+.stack > * + * { margin-top: 12px; }
+
+.row { display: flex; gap: 8px; align-items: center; }
+.row.wrap { flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+.row.end { justify-content: flex-end; }
+
+h1, h2, h3 { margin: 0; }
+h1 { font-size: 22px; }
+h2 { font-size: 16px; margin-top: 0; }
+h3 { font-size: 14px; }
+
+label { display: block; margin-bottom: 4px; }
+
+.input {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
 }
 
-.text-muted {
-  color: #6b7280 !important;
+.button, a.button {
+  display: inline-block;
+  padding: 6px 10px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  text-decoration: none;
+  cursor: pointer;
 }
 
-/* Limit width for professional layout */
-.app-container {
-  max-width: 920px;
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-/* =========================
-   Sidebar toggle (ChatGPT-ish)
-========================= */
-.history-toggle {
-  position: fixed;
-  top: 16px;
-  left: 16px;
+.small { font-size: 12px; }
+.help { font-size: 12px; }
+.notice { border: 1px solid #000; padding: 8px; }
+.codeblock {
+  border: 1px solid #000;
+  padding: 8px;
+  white-space: pre-wrap;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 12px;
+}
 
-  /* IMPORTANT:
-     Bootstrap offcanvas sits above ~1045.
-     Keep this BELOW offcanvas so it never covers the sidebar header. */
-  z-index: 1030;
-
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
+/* Class rows */
+.class-row {
   display: grid;
-  place-items: center;
-  border: 1px solid rgba(0,0,0,0.08);
-}
-
-.history-toggle i {
-  font-size: 1.2rem;
-}
-
-/* Offcanvas styling */
-.history-offcanvas {
-  width: 380px;
-}
-
-@media (max-width: 576px) {
-  .history-offcanvas {
-    width: 92vw;
-  }
-}
-
-.history-accordion-item {
-  border-radius: 14px;
-  overflow: hidden;
-  border: 1px solid rgba(0,0,0,0.06);
-  margin-bottom: 10px;
-}
-
-.history-title {
-  display: flex;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
   align-items: center;
-  justify-content: space-between;
 }
 
-.history-schools {
-  font-weight: 700;
-  font-size: 0.95rem;
+/* Results */
+.result-item { border: 1px solid #000; padding: 10px; }
+.match-item { border-top: 1px solid #000; padding-top: 8px; margin-top: 8px; }
+.badge { border: 1px solid #000; padding: 2px 6px; font-size: 12px; }
+
+/* Sidebar */
+.sidebar-toggle {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1100;
 }
 
-.history-meta {
-  margin-top: 2px;
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.2);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1000;
 }
 
-.history-list {
+.overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 320px;
+  max-width: 92vw;
+  background: #fff;
+  border-right: 1px solid #000;
+  transform: translateX(-100%);
+  z-index: 1050;
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
-.history-item {
-  background: var(--very-light-blue);
-  border: 1px solid rgba(0,0,0,0.04);
-  border-left: 4px solid var(--primary-blue);
-  border-radius: 12px;
-  padding: 10px 12px;
-}
+.sidebar.open { transform: translateX(0); }
 
-/* Make accordion button look clean */
-.accordion-button {
-  background: white;
-}
-.accordion-button:focus {
-  box-shadow: none;
-}
-
-/* =========================
-   Card & layout
-========================= */
-.card {
-  border-radius: 24px;
-  border: none;
-}
-
-.card-body {
-  border-radius: 24px;
-}
-
-/* =========================
-   Headings
-========================= */
-h1 {
-  color: var(--primary-blue);
-  font-weight: 600;
-}
-
-h2 {
-  color: var(--primary-blue);
-}
-
-/* =========================
-   Alerts
-========================= */
-.alert-info {
-  background: var(--light-blue);
-  border-left: 4px solid var(--primary-blue);
-  border-radius: 12px;
-  color: #555;
-}
-
-/* =========================
-   Inputs
-========================= */
-.form-control {
-  border-radius: 12px;
-  border: 2px solid #e0e0e0;
-  padding: 14px 18px;
-  background: #fafafa;
-  transition: all 0.3s ease;
-}
-
-.form-control:focus {
-  border-color: var(--primary-blue);
-  box-shadow: 0 0 0 3px rgba(66, 165, 245, 0.1);
-  background: white;
-}
-
-.form-label {
-  font-size: 1.05em;
-}
-
-/* =========================
-   Classes section
-========================= */
-.classes-section {
-  background: var(--very-light-blue);
-  border-radius: 16px;
-}
-
-.class-row {
+.sidebar-header {
+  padding: 10px;
+  border-bottom: 1px solid #000;
   display: flex;
-  gap: 10px;
+  justify-content: space-between;
   align-items: center;
+  gap: 8px;
 }
 
-.class-row input {
-  flex: 1;
+.sidebar-body {
+  padding: 10px;
+  overflow: auto;
 }
 
-/* =========================
-   Buttons
-========================= */
-.btn-primary {
-  background: var(--primary-blue);
-  border-color: var(--primary-blue);
-  border-radius: 12px;
-  padding: 10px 24px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-}
+.history-list { display: grid; gap: 8px; }
+.history-item { border: 1px solid #000; padding: 8px; }
+.history-empty { font-size: 12px; }
+.history-item-title { font-weight: bold; }
+.history-item-meta { font-size: 12px; }
+.history-item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 
-.btn-primary:hover {
-  background: var(--primary-blue-hover);
-  border-color: var(--primary-blue-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(66, 165, 245, 0.35);
+/* <details> minimal */
+details.history-item { padding: 0; }
+details.history-item > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 8px;
 }
+details.history-item > summary::-webkit-details-marker { display: none; }
+details.history-item[open] > summary { border-bottom: 1px solid #000; }
+details.history-item > div { padding: 8px; }
 
-.btn-primary:disabled {
-  background: #ccc;
-  border-color: #ccc;
-  transform: none;
-  box-shadow: none;
-}
-
-.btn-danger {
-  border-radius: 10px;
-  font-weight: 600;
-}
-
-.btn-outline-primary {
-  border-radius: 10px;
-  font-weight: 600;
-}
-
-/* =========================
-   Results
-========================= */
-.result-item {
-  background: var(--very-light-blue);
-  padding: 20px;
-  border-radius: 14px;
-  border-left: 4px solid var(--primary-blue);
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  margin-bottom: 16px;
-  line-height: 1.4;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.result-item:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
-}
-
-.result-item.no-match {
-  border-left-color: #f59e0b;
-}
-
-.list-group-item {
-  border-radius: 10px;
-  margin-bottom: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-.ge-info {
-  background: var(--light-blue);
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 0.9em;
-}
-
-.ge-info strong {
-  color: var(--primary-blue);
+/* Avoid toggle overlapping content on tiny screens */
+@media (max-width: 520px) {
+  .page { padding-top: 56px; }
 }

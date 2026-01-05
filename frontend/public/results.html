@@ -4,447 +4,55 @@
     <meta charset="utf-8" />
     <title>Transfer Results</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-    <!-- Bootstrap -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-
-    <!-- Shared theme -->
-    <link href="/style.css" rel="stylesheet">
+    <link href="/style.css" rel="stylesheet" />
   </head>
 
   <body>
-    <!-- Sidebar toggle button -->
-    <button class="history-toggle btn btn-light shadow-sm" type="button" data-bs-toggle="offcanvas" data-bs-target="#historySidebar" aria-controls="historySidebar">
-      <i class="bi bi-layout-sidebar-inset"></i>
-    </button>
-
-    <!-- Offcanvas Sidebar -->
-    <div class="offcanvas offcanvas-start history-offcanvas" tabindex="-1" id="historySidebar" aria-labelledby="historySidebarLabel">
-      <div class="offcanvas-header">
-        <h5 class="offcanvas-title" id="historySidebarLabel">
-          <i class="bi bi-clock-history me-2"></i>History
-        </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-      </div>
-
-      <div class="offcanvas-body">
-        <div class="d-flex gap-2 mb-3">
-          <button id="refreshHistory" class="btn btn-outline-primary btn-sm w-100">
-            <i class="bi bi-arrow-clockwise me-1"></i> Refresh
-          </button>
-          <button id="clearHistory" class="btn btn-outline-danger btn-sm w-100">
-            <i class="bi bi-trash me-1"></i> Clear
-          </button>
-        </div>
-
-        <div id="historyEmpty" class="text-muted small d-none">
-          No sessions yet. Run a lookup and it will appear here.
-        </div>
-
-        <div class="accordion" id="historyAccordion"></div>
-      </div>
+    <!-- Sidebar toggle -->
+    <div class="sidebar-toggle">
+      <button id="historyToggle" class="button" type="button" aria-controls="historySidebar" aria-expanded="false">
+        History
+      </button>
     </div>
 
-    <div class="container my-5">
-      <div class="mb-3 d-flex justify-content-end">
-  <a href="/" class="btn btn-outline-primary">
-    Home
-  </a>
-</div>
+    <!-- Overlay + Sidebar -->
+    <div id="overlay" class="overlay" hidden></div>
 
-      <div class="card shadow-lg">
-        <div class="card-body p-5">
-
-          <h1 class="text-center mb-4">Transfer Results</h1>
-
-          <div id="summary" class="mb-4"></div>
-
-          <h2 class="h4 mb-3">Matches for Classes You've Taken</h2>
-          <div id="takenBlock"></div>
-
-        </div>
+    <aside id="historySidebar" class="sidebar" aria-labelledby="historySidebarLabel" aria-hidden="true">
+      <div class="sidebar-header">
+        <div id="historySidebarLabel"><strong>History</strong></div>
+        <button id="historyClose" class="button" type="button" aria-label="Close history">X</button>
       </div>
-    </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+      <div class="sidebar-body">
+        <div class="row wrap">
+          <button id="refreshHistory" class="button" type="button">Refresh</button>
+          <button id="clearHistory" class="button" type="button">Clear</button>
+        </div>
 
-    <script>
-      function esc(s) {
-        return String(s || "")
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;")
-          .replaceAll("'", "&#039;");
-      }
+        <div id="historyEmpty" class="history-empty" style="margin-top: 12px;">
+          No sessions yet.
+        </div>
 
-      function safeParseJSON(text) {
-        try { return JSON.parse(text); } catch { return null; }
-      }
+        <div id="historyList" class="history-list" style="margin-top: 12px;"></div>
+      </div>
+    </aside>
 
-      // ---- Storage keys ----
-      function sessionsKey() { return "transferSessions:v1"; }
-      function pairKey(fromCode, toCode) { return String(fromCode) + "-" + String(toCode); }
-      function matchesKey(fromCode, toCode) { return "transferMatches:v1:" + String(fromCode) + "-" + String(toCode); }
+    <main class="page">
+      <div class="shell">
+        <div class="row between" style="margin-bottom: 12px;">
+          <h1>Transfer Results</h1>
+          <a href="/" class="button">Home</a>
+        </div>
 
-      // ---- Sessions store ----
-      function loadSessions() {
-        try {
-          const parsed = safeParseJSON(localStorage.getItem(sessionsKey()) || "{}");
-          return parsed && typeof parsed === "object" ? parsed : {};
-        } catch { return {}; }
-      }
+        <section class="panel stack">
+          <div id="summary"></div>
+          <div id="takenBlock" class="stack"></div>
+        </section>
+      </div>
+    </main>
 
-      function saveSessions(obj) {
-        try { localStorage.setItem(sessionsKey(), JSON.stringify(obj || {})); return true; }
-        catch { return false; }
-      }
+      <script src="/js/results.js"></script>
 
-      function normalizeClassStr(s) {
-        return String(s || "").trim().replace(/\s+/g, " ");
-      }
-
-      function mergeUnique(existingArr, newArr) {
-        const set = new Set((existingArr || []).map(normalizeClassStr).filter(Boolean));
-        (newArr || []).map(normalizeClassStr).filter(Boolean).forEach(v => set.add(v));
-        return Array.from(set);
-      }
-
-      function upsertSession(fromCode, toCode, fromName, toName, classes) {
-        const sessions = loadSessions();
-        const key = pairKey(fromCode, toCode);
-        const now = Date.now();
-
-        const prev = sessions[key] || {
-          fromCode: String(fromCode),
-          toCode: String(toCode),
-          fromName: String(fromName || ""),
-          toName: String(toName || ""),
-          updatedAt: now,
-          classes: []
-        };
-
-        sessions[key] = {
-          fromCode: String(fromCode),
-          toCode: String(toCode),
-          fromName: String(fromName || prev.fromName || ""),
-          toName: String(toName || prev.toName || ""),
-          updatedAt: now,
-          classes: mergeUnique(prev.classes, classes)
-        };
-
-        saveSessions(sessions);
-      }
-
-      // ---- Matches store ----
-      function loadMatches(fromCode, toCode) {
-        try {
-          const parsed = safeParseJSON(localStorage.getItem(matchesKey(fromCode, toCode)) || "{}");
-          return parsed && typeof parsed === "object" ? parsed : {};
-        } catch { return {}; }
-      }
-
-      function loadStoredMatches(from, to) {
-        return loadMatches(from, to);
-      }
-
-      function saveMatches(from, to, results) {
-        try {
-          const key = matchesKey(from, to);
-          const existing = loadMatches(from, to);
-
-          (results || []).forEach(function (r) {
-            if (!r || !r.matches_count) return;
-
-            const matchedCourses = [];
-            (r.matches || []).forEach(function (m) {
-              if (m && m.matched_equivalent && m.matched_equivalent.course) {
-                matchedCourses.push(m.matched_equivalent.course);
-              }
-            });
-
-            existing[r.query] = {
-              matchedCourses: matchedCourses,
-              timestamp: Date.now()
-            };
-          });
-
-          localStorage.setItem(key, JSON.stringify(existing));
-          return true;
-        } catch {
-          return false;
-        }
-      }
-
-      function formatDateTime(ms) {
-        try { return new Date(ms).toLocaleString(); }
-        catch { return ""; }
-      }
-
-      // ---- Sidebar render ----
-      function renderHistory() {
-        const sessions = loadSessions();
-        const keys = Object.keys(sessions || {});
-        const accordion = document.getElementById("historyAccordion");
-        const empty = document.getElementById("historyEmpty");
-
-        keys.sort((a, b) => (sessions[b].updatedAt || 0) - (sessions[a].updatedAt || 0));
-
-        accordion.innerHTML = "";
-        empty.classList.toggle("d-none", keys.length !== 0);
-
-        keys.forEach((k, idx) => {
-          const s = sessions[k] || {};
-          const fromCode = s.fromCode;
-          const toCode = s.toCode;
-
-          const fromName = s.fromName || fromCode;
-          const toName = s.toName || toCode;
-          const updated = formatDateTime(s.updatedAt || 0);
-
-          const matches = loadMatches(fromCode, toCode);
-          const matchedQueries = Object.keys(matches || {});
-
-          const headingId = "histHeading" + idx;
-          const collapseId = "histCollapse" + idx;
-
-          const matchedListHtml = matchedQueries.length
-            ? matchedQueries
-                .sort((a, b) => ((matches[b] && matches[b].timestamp) || 0) - ((matches[a] && matches[a].timestamp) || 0))
-                .map(q => {
-                  const item = matches[q] || {};
-                  const courses = (item.matchedCourses || []).slice(0, 8);
-                  const extra = (item.matchedCourses || []).length > 8 ? "…" : "";
-                  return `
-                    <div class="history-item">
-                      <div class="fw-semibold">${esc(q)}</div>
-                      <div class="small text-muted">
-                        ${courses.length ? ("Matched: " + esc(courses.join(", ")) + extra) : "Matched (saved)"}
-                      </div>
-                    </div>
-                  `;
-                })
-                .join("")
-            : `<div class="text-muted small">No matched classes saved yet for this pair.</div>`;
-
-          accordion.insertAdjacentHTML("beforeend", `
-            <div class="accordion-item history-accordion-item">
-              <h2 class="accordion-header" id="${headingId}">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
-                  <div class="w-100">
-                    <div class="history-title">
-                      <span class="history-schools">${esc(fromName)} → ${esc(toName)}</span>
-                    </div>
-                    <div class="history-meta small text-muted">
-                      Updated: ${esc(updated)}
-                    </div>
-                  </div>
-                </button>
-              </h2>
-
-              <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="${headingId}" data-bs-parent="#historyAccordion">
-                <div class="accordion-body">
-                  <div class="d-flex gap-2 mb-3">
-                    <button class="btn btn-sm btn-outline-secondary w-100" data-jump-results="1" data-from="${esc(fromCode)}" data-to="${esc(toCode)}">
-                      <i class="bi bi-box-arrow-up-right me-1"></i> Open Results
-                    </button>
-                  </div>
-
-                  <div class="small text-muted mb-2">
-                    Classes in this session: <strong>${(s.classes || []).length}</strong>
-                  </div>
-
-                  <div class="fw-bold mb-2">Matched Classes (Saved)</div>
-                  <div class="history-list">
-                    ${matchedListHtml}
-                  </div>
-                </div>
-              </div>
-            </div>
-          `);
-        });
-
-        accordion.querySelectorAll("[data-jump-results='1']").forEach(btn => {
-          btn.addEventListener("click", () => {
-            const fromCode = btn.getAttribute("data-from");
-            const toCode = btn.getAttribute("data-to");
-
-            const sessions = loadSessions();
-            const s = sessions[pairKey(fromCode, toCode)];
-            const classes = (s && s.classes) ? s.classes : [];
-            try { localStorage.setItem("takenClasses", JSON.stringify(classes)); } catch {}
-
-            window.location.href = `/results?from=${encodeURIComponent(fromCode)}&to=${encodeURIComponent(toCode)}`;
-          });
-        });
-      }
-
-      async function fetchJSONOrText(url, options) {
-        const res = await fetch(url, options);
-        const text = await res.text();
-        const parsed = safeParseJSON(text);
-        return { res, parsed, text };
-      }
-
-      function renderResults(data, from, to, stored) {
-        const summary = document.getElementById("summary");
-        const takenBlock = document.getElementById("takenBlock");
-        const savedCount = Object.keys(stored || {}).length;
-
-        summary.innerHTML = `
-          <div class="result-item mb-3">
-            <strong>From:</strong> ${esc(data.from_college)}<br/>
-            <strong>To:</strong> ${esc(data.to_college)}<br/>
-            <strong>Articulation Year:</strong> ${esc(data.academic_year || "N/A")}<br/>
-            <strong>GE List:</strong> ${esc(data.geListType)}
-          </div>
-          <div class="alert alert-success mb-0">
-            Saved matches for this school pair: <strong>${savedCount}</strong>
-          </div>
-        `;
-
-        takenBlock.innerHTML = (data.results || []).map(function (r) {
-          const isStored = Object.prototype.hasOwnProperty.call(stored, r.query);
-          const badge = isStored ? `<span class="badge bg-success ms-2">Saved</span>` : "";
-
-          if (!r.matches_count) {
-            return `
-              <div class="result-item mb-3">
-                <strong>Input:</strong> ${esc(r.query)} ${badge}<br/>
-                <span class="text-muted">No match found.</span>
-              </div>`;
-          }
-
-          const matches = (r.matches || []).map(function (m) {
-            const matchedCourse = (m && m.matched_equivalent && m.matched_equivalent.course) ? m.matched_equivalent.course : "";
-            const matchedTitle = (m && m.matched_equivalent && m.matched_equivalent.title) ? m.matched_equivalent.title : "";
-
-            return `
-              <li class="list-group-item">
-                <strong>${esc(m.from_course)}</strong> — ${esc(m.course_title)}<br/>
-                <small class="text-muted">
-                  Matched: ${esc(matchedCourse)}
-                  ${matchedTitle ? " — " + esc(matchedTitle) : ""}
-                </small>
-
-                ${
-                  m.ge
-                    ? `<div class="ge-info mt-2">
-                        <strong>Transfer Areas:</strong>
-                        ${esc((m.ge.transferAreas || []).join(", ") || "None")}<br/>
-                        <strong>Approved:</strong>
-                        ${m.ge.isCurrentlyApproved ? "Yes" : "No"}
-                      </div>`
-                    : ""
-                }
-              </li>
-            `;
-          }).join("");
-
-          return `
-            <div class="result-item mb-4">
-              <strong>Input:</strong> ${esc(r.query)} ${badge}
-              <ul class="list-group mt-3">${matches}</ul>
-            </div>`;
-        }).join("");
-      }
-
-      async function main() {
-        // Sidebar hookups
-        const historyEl = document.getElementById("historySidebar");
-        historyEl.addEventListener("show.bs.offcanvas", renderHistory);
-
-        document.getElementById("refreshHistory").onclick = renderHistory;
-        document.getElementById("clearHistory").onclick = () => {
-          try {
-            localStorage.removeItem("transferSessions:v1");
-            Object.keys(localStorage).forEach(k => {
-              if (String(k).startsWith("transferMatches:v1:")) localStorage.removeItem(k);
-            });
-          } catch {}
-          renderHistory();
-        };
-
-        const params = new URLSearchParams(window.location.search);
-        const from = params.get("from");
-        const to = params.get("to");
-
-        const summary = document.getElementById("summary");
-
-        if (!from || !to) {
-          summary.innerHTML = `<div class="alert alert-warning">Missing school selection.</div>`;
-          return;
-        }
-
-        let taken = [];
-        try { taken = JSON.parse(localStorage.getItem("takenClasses") || "[]"); } catch {}
-
-        if (!taken.length) {
-          summary.innerHTML = `
-            <div class="alert alert-warning">
-              No classes were entered on the home page.
-            </div>`;
-          return;
-        }
-
-        summary.innerHTML = `
-          <div class="alert alert-info">
-            Finding transfer matches…
-          </div>`;
-
-        try {
-          const payload = {
-            from: from,
-            to: to,
-            queries: taken,
-            geListType: "CALGETC",
-            geAcademicYearId: 76
-          };
-
-          const { res, parsed, text } = await fetchJSONOrText("http://localhost:8000/lookup_batch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-          });
-
-          if (!parsed) {
-            summary.innerHTML = `
-              <div class="alert alert-danger">
-                Backend did not return JSON.<br/>
-                <div class="mt-2"><strong>Status:</strong> ${esc(res.status)} ${esc(res.statusText)}</div>
-                <pre class="mt-2" style="white-space:pre-wrap;max-height:260px;overflow:auto;">${esc(text)}</pre>
-              </div>`;
-            return;
-          }
-
-          const data = parsed;
-
-          if (!res.ok) {
-            summary.innerHTML = `
-              <div class="alert alert-danger">
-                ${esc(data.error || "Lookup failed")}
-              </div>`;
-            return;
-          }
-
-          // Save matches + update the session so history reflects newest run
-          saveMatches(from, to, data.results || []);
-          upsertSession(from, to, data.from_college, data.to_college, taken);
-
-          const storedAfter = loadStoredMatches(from, to);
-          renderResults(data, from, to, storedAfter);
-
-        } catch (err) {
-          summary.innerHTML = `
-            <div class="alert alert-danger">
-              Lookup failed in the browser. Open DevTools Console for details.
-              <div class="mt-2"><pre style="white-space:pre-wrap;">${esc(err && err.message ? err.message : String(err))}</pre></div>
-            </div>`;
-        }
-      }
-
-      window.addEventListener("DOMContentLoaded", main);
-    </script>
   </body>
 </html>
