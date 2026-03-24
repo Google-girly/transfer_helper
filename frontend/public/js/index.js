@@ -226,7 +226,7 @@
 
     // Fetch schools
     try {
-        const res = await fetch("http://localhost:8000/schools");
+        const res = await fetch("/schools");
         const schools = await res.json();
 
         schools.forEach(s => {

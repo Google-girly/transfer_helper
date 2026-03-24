@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: transfer-helper
+    env: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    plan: free

@@ -306,7 +306,7 @@
         geAcademicYearId: 76
         };
 
-        const { res, parsed, text } = await fetchJSONOrText("http://localhost:8000/lookup_batch", {
+        const { res, parsed, text } = await fetchJSONOrText("/lookup_batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)

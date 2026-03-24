@@ -3,13 +3,21 @@ import os
 import re
 import requests
 from datetime import datetime
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-app = Flask(__name__)
-CORS(app, origins=["http://localhost:3000"])
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.join(os.path.dirname(BASE_DIR), "frontend", "public")
+
+app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
+
+# Comma-separated list, e.g. "http://localhost:3000,https://your-app.onrender.com"
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
+CORS(app, origins=cors_origins)
 
 # Cache ASSIST articulation payloads (from/to transfers)
 TRANSFERS_CACHE = {}
@@ -62,6 +70,20 @@ def fetch_api_data(url: str) -> dict:
 # ---------------------------
 # Schools
 # ---------------------------
+
+@app.get("/")
+def home():
+    return send_from_directory(FRONTEND_DIR, "index.html")
+
+
+@app.get("/results")
+def results_page():
+    return send_from_directory(FRONTEND_DIR, "results.html")
+
+
+@app.get("/health")
+def health():
+    return jsonify({"status": "ok"})
 
 @app.get("/schools")
 def schools():
@@ -416,4 +438,5 @@ def lookup_batch():
 
 
 if __name__ == "__main__":
-    app.run(port=8000, debug=True)
+    port = int(os.getenv("PORT", "8000"))
+    app.run(host="0.0.0.0", port=port, debug=True)
