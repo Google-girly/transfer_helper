@@ -74,6 +74,38 @@ Backend scripts are used to:
 
 The frontend communicates with the backend over localhost during development.
 
+## Docker (single-container app)
+
+This project is configured to run as one container:
+
+- Flask API + static frontend are served by the same process
+- `frontend/public` is served directly by the backend
+- Browser calls use same-origin endpoints (`/schools`, `/lookup_batch`)
+
+### Build and run
+
+1. Build image from the project root
+2. Run container with port mapping
+3. Open `http://localhost:8000`
+
+The container starts with Gunicorn and reads `PORT` (default `8000`).
+
+## Deploy to Render
+
+This repo includes [render.yaml](render.yaml), so you can deploy with a Blueprint:
+
+1. Push this branch to GitHub
+2. In Render, click **New +** → **Blueprint**
+3. Select your repo
+4. Render reads [render.yaml](render.yaml) and builds from [Dockerfile](Dockerfile)
+5. After deploy, open your Render URL
+
+### Optional environment variable
+
+- `CORS_ORIGINS` (comma-separated). Example: `https://your-app.onrender.com`
+
+If unset, it defaults to `http://localhost:3000`.
+
 ## Project Goals
 
 - Simplify transfer planning for students
