@@ -17,6 +17,7 @@
     }
 
     function sessionsKey() { return "transferSessions:v1"; }
+    function formDraftKey() { return "transferFormDraft:v1"; }
     function pairKey(fromCode, toCode) { return String(fromCode) + "-" + String(toCode); }
     function matchesKey(fromCode, toCode) { return "transferMatches:v1:" + String(fromCode) + "-" + String(toCode); }
 
@@ -30,6 +31,37 @@
     function saveSessions(obj) {
     try { localStorage.setItem(sessionsKey(), JSON.stringify(obj || {})); return true; }
     catch { return false; }
+    }
+
+    function loadFormDraft() {
+    try {
+        const parsed = safeParseJSON(localStorage.getItem(formDraftKey()) || "null");
+        if (!parsed || typeof parsed !== "object") return null;
+        return {
+        fromName: String(parsed.fromName || ""),
+        toName: String(parsed.toName || ""),
+        classes: Array.isArray(parsed.classes)
+            ? parsed.classes.map(normalizeClassStr).filter(Boolean).slice(0, 30)
+            : []
+        };
+    } catch {
+        return null;
+    }
+    }
+
+    function saveFormDraft(draft) {
+    try {
+        localStorage.setItem(formDraftKey(), JSON.stringify({
+        fromName: String((draft && draft.fromName) || ""),
+        toName: String((draft && draft.toName) || ""),
+        classes: Array.isArray(draft && draft.classes)
+            ? draft.classes.map(normalizeClassStr).filter(Boolean).slice(0, 30)
+            : []
+        }));
+        return true;
+    } catch {
+        return false;
+    }
     }
 
     function mergeUnique(existingArr, newArr) {
@@ -159,6 +191,12 @@
         const minRows = Math.max(3, cls.length || 3);
         for (let i = 0; i < minRows; i++) createRow(rowsEl, cls[i] || "");
 
+        saveFormDraft({
+            fromName: fromName || "",
+            toName: toName || "",
+            classes: cls
+        });
+
         closeSidebar();
         validate();
         });
@@ -186,14 +224,17 @@
     submit.disabled = !getSelectedCode(fromInput) || !getSelectedCode(toInput);
     }
 
-    function createRow(rowsEl, value) {
+    function createRow(rowsEl, value, onChange) {
     const row = document.createElement("div");
     row.className = "class-row";
     row.innerHTML = `
         <input class="input" placeholder="e.g. HORT 53" value="${esc(value)}">
         <button class="button" type="button">Remove</button>
     `;
-    row.querySelector("button").onclick = () => row.remove();
+    row.querySelector("button").onclick = () => {
+        row.remove();
+        if (typeof onChange === "function") onChange();
+    };
     rowsEl.appendChild(row);
     }
 
@@ -220,9 +261,27 @@
     const list = document.getElementById("schoolsList");
     const rowsEl = document.getElementById("rows");
 
+    function currentClasses() {
+        return [...rowsEl.querySelectorAll("input")]
+        .map(i => normalizeClassStr(i.value))
+        .filter(Boolean)
+        .slice(0, 30);
+    }
+
+    function persistDraft() {
+        saveFormDraft({
+        fromName: fromInput.value.trim(),
+        toName: toInput.value.trim(),
+        classes: currentClasses()
+        });
+    }
+
     // Seed rows
-    for (let i = 0; i < 3; i++) createRow(rowsEl, "");
-    document.getElementById("addRow").onclick = () => createRow(rowsEl, "");
+    for (let i = 0; i < 3; i++) createRow(rowsEl, "", persistDraft);
+    document.getElementById("addRow").onclick = () => {
+        createRow(rowsEl, "", persistDraft);
+        persistDraft();
+    };
 
     // Fetch schools
     try {
@@ -239,10 +298,26 @@
         setWarning("Could not load schools list. Is the backend running?");
     }
 
-    fromInput.addEventListener("input", validate);
-    toInput.addEventListener("input", validate);
+    fromInput.addEventListener("input", () => { validate(); persistDraft(); });
+    toInput.addEventListener("input", () => { validate(); persistDraft(); });
+    rowsEl.addEventListener("input", (e) => {
+        if (e && e.target && e.target.tagName === "INPUT") persistDraft();
+    });
+
+    // Restore draft first (from/to + classes)
+    const draft = loadFormDraft();
+    if (draft) {
+        fromInput.value = draft.fromName || "";
+        toInput.value = draft.toName || "";
+
+        rowsEl.innerHTML = "";
+        const cls = draft.classes.slice(0, 30);
+        const minRows = Math.max(3, cls.length || 3);
+        for (let i = 0; i < minRows; i++) createRow(rowsEl, cls[i] || "", persistDraft);
+    }
 
     // Restore last taken classes (optional)
+    if (!draft) {
     try {
         const raw = localStorage.getItem("takenClasses");
         const saved = raw ? JSON.parse(raw) : [];
@@ -250,9 +325,10 @@
         rowsEl.innerHTML = "";
         const cls = saved.slice(0, 30);
         const minRows = Math.max(3, cls.length || 3);
-        for (let i = 0; i < minRows; i++) createRow(rowsEl, cls[i] || "");
+        for (let i = 0; i < minRows; i++) createRow(rowsEl, cls[i] || "", persistDraft);
         }
     } catch {}
+    }
 
     validate();
 
@@ -276,6 +352,7 @@
 
         // Save session (same schema used by results)
         upsertSession(fromCode, toCode, fromInput.value.trim(), toInput.value.trim(), classes);
+        saveFormDraft({ fromName: fromInput.value.trim(), toName: toInput.value.trim(), classes });
 
         window.location.href = `/results?from=${encodeURIComponent(fromCode)}&to=${encodeURIComponent(toCode)}`;
     };
